@@ -66,7 +66,7 @@ Positive weights enhance the named direction, negative weights push toward the o
 1. Clone this repository:
 
 ```bash
-git  clone  https://github.com/gapeleon/exui-controlvectors
+git  clone  https://github.com/gapeleon/exui-control-vectors
 cd  exui-control
 pip  install  -r  requirements.txt
 ```
