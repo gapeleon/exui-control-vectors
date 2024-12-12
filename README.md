@@ -1,62 +1,94 @@
-<p align="center">
 
-# ExUI
+<p  align="center">
 
-This is a simple, lightweight browser-based UI for running local inference using [ExLlamaV2](https://github.com/turboderp/exllamav2).
+# ExUI with Control Vectors
 
-### Overview of features
+A fork of [ExUI](https://github.com/turboderp/exui) adding support for creative writing control vectors in ExLlamaV2.
 
-- Friendly, responsive and minimalistic UI
-- Persistent sessions
-- Multiple instruct formats
-- Speculative decoding
-- Supports EXL2, GPTQ and FP16 models
-- Notepad mode
+### Overview of Features
 
-### Screenshots
+All original ExUI features plus:
 
-[![chat_screenshot](doc/screenshot_1_thumb.png)](doc/screenshot_1.png)
-[![chat_screenshot](doc/screenshot_2_thumb.png)](doc/screenshot_2.png)
-[![chat_screenshot](doc/screenshot_3_thumb.png)](doc/screenshot_3.png)
-[![chat_screenshot](doc/screenshot_4_thumb.png)](doc/screenshot_4.png)
-[![chat_screenshot](doc/screenshot_5_thumb.png)](doc/screenshot_5.png)
-[![chat_screenshot](doc/screenshot_6_thumb.png)](doc/screenshot_6.png)
-[![chat_screenshot](doc/screenshot_7_thumb.png)](doc/screenshot_7.png)
-[![chat_screenshot](doc/screenshot_8_thumb.png)](doc/screenshot_8.png)
+- Support for creative writing control vectors
+- Multiple vector combinations
+- Dynamic weight adjustment
+- Visual control vector configuration
 
-### Running locally
+### Control Vectors Support
 
-First, clone this repository and install requirements:
+This fork adds support for [jukofyork's creative writing control vectors](https://huggingface.co/jukofyork/creative-writing-control-vectors-v3.0), allowing dynamic control over the model's writing style.
 
-```
-git clone https://github.com/turboderp/exui
-cd exui
-pip install -r requirements.txt
+#### Directory Structure
+
+Your control vectors should be placed in a "-vectors" directory next to your model:
 ```
 
-Then run the web server with the included server.py:
+models/
+
+├── Your-Model-Name/
+
+│ └── model files...
+
+└── Your-Model-Name-vectors/
+
+│ └── vector-name__debias.gguf
+
+│ └──  vector-name__direction1.gguf
+
+│ └──  vector-name__direction2.gguf
+
+│ └──  ...
 
 ```
-python server.py
-```
 
-Your browser should automatically open on the default IP/port. Config and sessions are stored in `~/exui` by default.
+#### Using Control Vectors
 
-Prebuilt wheels for ExLlamaV2 are available [here](https://github.com/turboderp/exllamav2/releases). Installing 
-the latest version of [Flash Attention](https://github.com/Dao-AILab/flash-attention) is recommended. 
 
-### Running in Google Colab
+1. Add vectors to your model's "-vectors" directory
 
-An example Colab notebook is provided [here](https://github.com/turboderp/exui/blob/master/doc/colab.ipynb).
+2. In the model settings page, enable "Control Vectors"
+
+3. Add vector configurations in the format: `vector:direction:weight`
+
+- Example: `humility_vs_narcissism:narcissism:1.0`
+
+4. Multiple vectors can be combined with different weights
+
+- Example: `humility_vs_narcissism:narcissism:1.4,empathy_vs_sociopathy:sociopathy:1.0`
+
+
+Positive weights enhance the named direction, negative weights push toward the opposite.
+
+  
 
 ### Installation
 
-More detailed installation instructions can be found [here](https://github.com/turboderp/exui/blob/master/doc/manual-install.md).
+1. Clone this repository:
 
-### More to come
+```bash
+git  clone  https://github.com/gapeleon/exui-controlvectors
+cd  exui-control
+pip  install  -r  requirements.txt
+```
 
-Stay tuned.
+2. Run the web server:
 
-![avatar_unicorn.png](static%2Fgfx%2Favatar_unicorn.png)
+```bash
+python  server.py
+```
+Your browser should automatically open on the default IP/port. Config and sessions are stored in `~/exui` by default.
 
+### Credits
+
+- Original [ExUI](https://github.com/turboderp/exui) by turboderp
+
+- [ExLlamaV2](https://github.com/turboderp/exllamav2/) by turboderp
+
+- Control vector wrapper for exllamav2 by [llmixer/ExllamaV2-Control-Vectors](https://huggingface.co/llmixer/ExllamaV2-Control-Vectors)
+
+- Creative writing control vectors by [jukofyork](https://huggingface.co/jukofyork/creative-writing-control-vectors-v3.0)
+
+### Screenshots
+
+[TODO add screenshots showing the control vector UI and example outputs]
 
