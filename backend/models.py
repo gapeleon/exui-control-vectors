@@ -1,5 +1,7 @@
 import json, uuid, os, gc
 import torch
+from exl2_wrapper import ExLlamaV2ModuleWrapper
+
 from pynvml import *
 
 from exllamav2 import(
@@ -156,6 +158,12 @@ def prepare_draft_model(model):
 
         if "draft_rope_alpha" not in model: model["draft_rope_alpha"] = 1.0
         if "draft_rope_alpha_auto" not in model: model["draft_rope_alpha_auto"] = True
+        
+            # Add control vector settings
+    if "control_vectors" not in model: 
+        model["control_vectors"] = ""
+    if "control_vectors_enabled" not in model:
+        model["control_vectors_enabled"] = False
 
 
 def prepare_model(model):
@@ -183,6 +191,11 @@ def prepare_model(model):
     stats["head_dim"] = prep_config.head_dim
     stats["default_seq_len"] = prep_config.max_seq_len
     model["stats"] = stats
+    
+    if "control_vectors" not in model:
+        model["control_vectors"] = ""
+    if "control_vectors_enabled" not in model:
+        model["control_vectors_enabled"] = False
 
     model["default_seq_len"] = prep_config.max_seq_len
     if "seq_len" not in model: model["seq_len"] = prep_config.max_seq_len
@@ -193,6 +206,7 @@ def prepare_model(model):
     if "chunk_size" not in model: model["chunk_size"] = prep_config.max_input_len
     if "gpu_split" not in model: model["gpu_split"] = ""
     if "gpu_split_auto" not in model: model["gpu_split_auto"] = True
+    
 
 
 class ModelContainer:
@@ -327,9 +341,20 @@ class ModelContainer:
             yield from self.model.load_autosplit_gen(self.cache, reserve_vram = reserve, last_id_only = True, callback_gen = progress_callback)
 
         # Test VRAM allocation with a full-length forward pass
-
         input_ids = torch.zeros((1, self.config.max_input_len), dtype = torch.long)
         # self.model.forward(input_ids, cache = self.cache, preprocess_only = True)
+
+        # Apply control vectors if enabled
+        if self.model_dict.get("control_vectors_enabled", False):
+            control_vectors = self.model_dict.get("control_vectors", "").strip()
+            if control_vectors:
+                print(f"Debug: Attempting to apply control vectors: {control_vectors}")
+                print(f"Debug: Looking in: {self.model.config.model_dir}-vectors/")
+                try:
+                    ExLlamaV2ModuleWrapper.wrap(self.model, control_vectors)
+                except Exception as e:
+                    print(f"Error applying control vectors: {str(e)}")
+                    print(f"Debug: Full exception: {repr(e)}")
 
         # Create generator
 

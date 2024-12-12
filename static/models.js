@@ -175,6 +175,8 @@ export class ModelView {
         }
     }
 
+
+
     setName(new_name, post = null) {
         this.modelInfo.name = new_name;
         this.send(post);
@@ -235,6 +237,10 @@ export class ModelView {
             this.tb_chunk_size.refresh();
             this.tb_tp.refresh();
             this.tb_gpu_split.refresh();
+
+            // Add these lines here
+            this.cb_control_vectors.refresh();
+            this.populateVectorEntries();
 
             this.cb_speculative.refresh();
             if (this.modelInfo.speculative_mode == "Draft model") {
@@ -362,6 +368,29 @@ export class ModelView {
         this.element_model.appendChild(this.tb_tp.element);
         this.element_model.appendChild(this.tb_gpu_split.element);
 //        this.element_model.appendChild(this.chbk_ngram.element);
+
+        // Control vectors
+        this.element_model.appendChild(util.newDiv(null, "model-view-text spacer", ""));
+        this.cb_control_vectors = new controls.LabelCheckbox(
+            "model-view-item-left", 
+            "Control vectors", 
+            "model-view-item-right checkbox", 
+            "Enabled", 
+            this.modelInfo, 
+            "control_vectors_enabled", 
+            () => { this.send() }
+        );
+        this.element_model.appendChild(this.cb_control_vectors.element);
+
+        // Vector entries container
+        this.vector_entries = util.newDiv(null, "vector-entries");
+        this.element_model.appendChild(this.vector_entries);
+
+        // Add vector button
+        this.add_vector_btn = new controls.Button("+ Add Vector", () => {
+            this.addVectorEntry();
+        });
+        this.element_model.appendChild(this.add_vector_btn.element);
 
         // Speculative decoding
 
@@ -540,5 +569,99 @@ export class ModelView {
             this.error_message = null;
             this.updateView();
         });
+    }
+
+    addVectorEntry(vector = "", direction = "", weight = "1.0") {
+        const entry = util.newDiv(null, "vector-entry");
+        
+        const vectorInput = document.createElement("input");
+        vectorInput.className = "model-view-item-textbox";
+        vectorInput.value = vector;
+        vectorInput.placeholder = "vector name";
+        
+        const directionInput = document.createElement("input");
+        directionInput.className = "model-view-item-textbox";
+        directionInput.value = direction;
+        directionInput.placeholder = "direction";
+        
+        const weightInput = document.createElement("input");
+        weightInput.className = "model-view-item-textbox shortright";
+        weightInput.value = weight;
+        weightInput.type = "number";
+        weightInput.step = "0.1";
+        
+        const removeBtn = document.createElement("button");
+        removeBtn.textContent = "×";
+        removeBtn.onclick = () => {
+            entry.remove();
+            this.updateVectorString();
+        };
+    
+        entry.appendChild(vectorInput);
+        entry.appendChild(directionInput);
+        entry.appendChild(weightInput);
+        entry.appendChild(removeBtn);
+    
+        // Update only on blur or Enter
+        const updateFn = () => {
+            console.log("Updating vector string");
+            this.updateVectorString();
+        };
+        
+        [vectorInput, directionInput, weightInput].forEach(input => {
+            input.onblur = updateFn;
+            input.onkeydown = (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    input.blur();
+                }
+            };
+        });
+    
+        this.vector_entries.appendChild(entry);
+        console.log("Added new vector entry");
+    }
+    
+    updateVectorString() {
+        const entries = this.vector_entries.getElementsByClassName("vector-entry");
+        const vectors = [];
+        
+        for (const entry of entries) {
+            const inputs = entry.getElementsByTagName("input");
+            const vector = inputs[0].value.trim();
+            const direction = inputs[1].value.trim();
+            const weight = inputs[2].value.trim();
+            
+            // Include partial entries too
+            vectors.push(`${vector}:${direction}:${weight}`);
+        }
+        
+        console.log("New vectors string:", vectors.join(","));
+        this.modelInfo.control_vectors = vectors.join(",");
+        
+        // Use a flag to prevent repopulating vectors during this update
+        this._skipVectorPopulate = true;
+        this.send();
+        this._skipVectorPopulate = false;
+    }
+    
+    populateVectorEntries() {
+        // Skip if we're in the middle of an update
+        if (this._skipVectorPopulate) return;
+        
+        this.vector_entries.innerHTML = "";
+        if (this.modelInfo.control_vectors) {
+            const vectors = this.modelInfo.control_vectors.split(",");
+            for (const vector of vectors) {
+                if (vector.trim()) {
+                    const [name, direction, weight] = vector.split(":");
+                    this.addVectorEntry(
+                        name || "", 
+                        direction || "", 
+                        weight || "1.0"
+                    );
+                }
+            }
+        }
     }
 }
