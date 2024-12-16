@@ -3,3 +3,5 @@ pynvml
 exllamav2>=0.2.3
 Flask>=2.3.2
 waitress>=2.1.2
+numpy<=2.0
+pyyaml
