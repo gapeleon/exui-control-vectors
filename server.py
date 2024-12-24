@@ -1,8 +1,10 @@
 import sys, os, json, argparse
 from threading import Timer, Lock
-
-from flask import Flask, render_template, request
+from os.path import expanduser
+import glob
+from flask import Flask, render_template, request, jsonify
 from flask import Response, stream_with_context
+
 from waitress import serve
 import webbrowser
 
@@ -61,6 +63,29 @@ def api_list_models():
                    "current_model": c }
         if verbose: print("->", result)
         return json.dumps(result) + "\n"
+
+@app.route("/api/scan_vectors", methods=["POST"])
+def scan_vectors():
+    packet = request.get_json()
+    model_dir = packet.get("model_directory")
+    if not model_dir:
+        return jsonify({"vectors": []})
+        
+    model_dir = expanduser(model_dir)  # Expand user path first
+    vectors_dir = model_dir + "-vectors"  # Then add the -vectors suffix
+    vectors = {}
+    
+    if os.path.exists(vectors_dir):
+        for file in glob.glob(os.path.join(vectors_dir, "*.gguf")):
+            base = os.path.basename(file).rsplit("-", 1)[-1].replace(".gguf", "")
+            vector, direction = base.split("__")
+            if vector not in vectors:
+                vectors[vector] = []
+            vectors[vector].append(direction)
+            
+    return jsonify({"vectors": vectors})
+
+
 
 @app.route("/api/get_model_info", methods=['POST'])
 def api_get_model_info():

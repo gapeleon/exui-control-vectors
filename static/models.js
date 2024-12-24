@@ -175,7 +175,29 @@ export class ModelView {
         }
     }
 
-
+    addVectorControls() {
+        // Control vectors section
+        this.element_model.appendChild(util.newDiv(null, "model-view-text spacer", ""));
+        this.cb_control_vectors = new controls.LabelCheckbox(
+            "model-view-item-left", 
+            "Control vectors", 
+            "model-view-item-right checkbox", 
+            "Enabled", 
+            this.modelInfo, 
+            "control_vectors_enabled", 
+            () => { 
+                if (this.modelInfo.control_vectors_enabled) {
+                    this.scanAndPopulateVectors();
+                }
+                this.send();
+            }
+        );
+        this.element_model.appendChild(this.cb_control_vectors.element);
+    
+        // Vector entries container
+        this.vector_entries = util.newDiv(null, "vector-entries");
+        this.element_model.appendChild(this.vector_entries);
+    }
 
     setName(new_name, post = null) {
         this.modelInfo.name = new_name;
@@ -238,10 +260,33 @@ export class ModelView {
             this.tb_tp.refresh();
             this.tb_gpu_split.refresh();
 
-            // Add these lines here
+            // Add this section for control vectors
             this.cb_control_vectors.refresh();
-            this.populateVectorEntries();
-
+            if (this.modelInfo.control_vectors_enabled) {
+                // Store current vector states before scanning
+                const currentVectors = new Map();
+                this.vector_entries.querySelectorAll('.vector-entry').forEach(entry => {
+                    const vector = entry.querySelector('span').textContent;
+                    const direction = entry.querySelector('select').value;
+                    const weight = entry.querySelector('input[type="number"]').value;
+                    const enabled = entry.querySelector('input[type="checkbox"]').checked;
+                    currentVectors.set(vector, {direction, weight, enabled});
+                });
+                // Scan and populate, preserving states
+                this.scanAndPopulateVectors().then(() => {
+                    // Restore states after populating
+                    this.vector_entries.querySelectorAll('.vector-entry').forEach(entry => {
+                        const vector = entry.querySelector('span').textContent;
+                        const savedState = currentVectors.get(vector);
+                        if (savedState) {
+                            entry.querySelector('select').value = savedState.direction;
+                            entry.querySelector('input[type="number"]').value = savedState.weight;
+                            entry.querySelector('input[type="checkbox"]').checked = savedState.enabled;
+                        }
+                    });
+                });
+            }
+    
             this.cb_speculative.refresh();
             if (this.modelInfo.speculative_mode == "Draft model") {
                 this.element_draft_model.classList.remove("hidden");
@@ -317,7 +362,7 @@ export class ModelView {
         this.element.appendChild(util.newDiv(null, "model-view-text divider", ""));
         this.element.appendChild(util.newDiv(null, "model-view-text spacer", ""));
 
-        this.tb_model_directory = new controls.LabelTextbox("model-view-item-left", "Model directory", "model-view-item-textbox wide", "~/models/my_model/", this.modelInfo, "model_directory", null, () => { this.send() } );
+        this.tb_model_directory = new controls.LabelTextbox("model-view-item-left", "Model directory", "model-view-item-textbox wide", "~/models/my_model/", this.modelInfo, "model_directory", null, () => { this.send(); });
         this.element.appendChild(this.tb_model_directory.element);
 
         this.element_model = util.newHFlex();
@@ -351,13 +396,13 @@ export class ModelView {
 
         this.element_model.appendChild(util.newDiv(null, "model-view-text spacer", ""));
 
-        this.tb_seq_len = new controls.LabelNumbox("model-view-item-left", "Context length", "model-view-item-textbox shortright", "", this.modelInfo, "seq_len", 32, 1024*1024, 0, () => { this.send() } );
-        this.tb_rope_scale = new controls.LabelNumbox("model-view-item-left", "RoPE scale", "model-view-item-textbox shortright", "", this.modelInfo, "rope_scale", 0.01, 1000, 2, () => { this.send() } );
-        this.tb_rope_alpha = new controls.LabelNumbox("model-view-item-left", "RoPE alpha", "model-view-item-textbox shortright", "", this.modelInfo, "rope_alpha", 0.01, 1000, 2, () => { this.send() } );
-        this.cb_cache_mode = new controls.LabelCombobox("model-view-item-left", "Cache mode", "model-view-item-combobox short", [ "FP16", "FP8", "Q4", "Q6", "Q8" ], this.modelInfo, "cache_mode", () => { this.send() } );
-        this.tb_chunk_size = new controls.LabelNumbox("model-view-item-left", "Chunk size", "model-view-item-textbox shortright", "", this.modelInfo, "chunk_size", 32, 1024*1024, 0, () => { this.send() } );
-        this.tb_tp = new controls.LabelCheckbox("model-view-item-left", "TP (experimental)", "model-view-item-right checkbox", "Enabled", this.modelInfo, "tensor_p", () => { this.send() } );
-        this.tb_gpu_split = new controls.LabelTextbox("model-view-item-left", "GPU split", "model-view-item-textbox short", "8.5,12", this.modelInfo, "gpu_split", null, () => { this.send() }, "gpu_split_auto" );
+        this.tb_seq_len = new controls.LabelNumbox("model-view-item-left", "Context length", "model-view-item-textbox shortright", "", this.modelInfo, "seq_len", 32, 1024 * 1024, 0, () => { this.send(); });
+        this.tb_rope_scale = new controls.LabelNumbox("model-view-item-left", "RoPE scale", "model-view-item-textbox shortright", "", this.modelInfo, "rope_scale", 0.01, 1000, 2, () => { this.send(); });
+        this.tb_rope_alpha = new controls.LabelNumbox("model-view-item-left", "RoPE alpha", "model-view-item-textbox shortright", "", this.modelInfo, "rope_alpha", 0.01, 1000, 2, () => { this.send(); });
+        this.cb_cache_mode = new controls.LabelCombobox("model-view-item-left", "Cache mode", "model-view-item-combobox short", ["FP16", "FP8", "Q4", "Q6", "Q8"], this.modelInfo, "cache_mode", () => { this.send(); });
+        this.tb_chunk_size = new controls.LabelNumbox("model-view-item-left", "Chunk size", "model-view-item-textbox shortright", "", this.modelInfo, "chunk_size", 32, 1024 * 1024, 0, () => { this.send(); });
+        this.tb_tp = new controls.LabelCheckbox("model-view-item-left", "TP (experimental)", "model-view-item-right checkbox", "Enabled", this.modelInfo, "tensor_p", () => { this.send(); });
+        this.tb_gpu_split = new controls.LabelTextbox("model-view-item-left", "GPU split", "model-view-item-textbox short", "8.5,12", this.modelInfo, "gpu_split", null, () => { this.send(); }, "gpu_split_auto");
 //        this.chbk_ngram = new controls.LabelCheckbox("model-view-item-left", "N-gram decoding", "model-view-item-right checkbox", "Enabled", this.modelInfo, "speculative_ngram", () => { this.send() } );
 
         this.element_model.appendChild(this.tb_seq_len.element);
@@ -367,18 +412,24 @@ export class ModelView {
         this.element_model.appendChild(this.tb_chunk_size.element);
         this.element_model.appendChild(this.tb_tp.element);
         this.element_model.appendChild(this.tb_gpu_split.element);
-//        this.element_model.appendChild(this.chbk_ngram.element);
-
-        // Control vectors
+    
+        // Control vectors section with amended logic
         this.element_model.appendChild(util.newDiv(null, "model-view-text spacer", ""));
         this.cb_control_vectors = new controls.LabelCheckbox(
-            "model-view-item-left", 
-            "Control vectors", 
-            "model-view-item-right checkbox", 
-            "Enabled", 
-            this.modelInfo, 
-            "control_vectors_enabled", 
-            () => { this.send() }
+            "model-view-item-left",
+            "Control vectors",
+            "model-view-item-right checkbox",
+            "Enabled",
+            this.modelInfo,
+            "control_vectors_enabled",
+            () => {
+                if (this.modelInfo.control_vectors_enabled) {
+                    this.scanAndPopulateVectors();
+                } else {
+                    this.vector_entries.innerHTML = ''; // Clear vector entries when disabled
+                }
+                this.send();
+            }
         );
         this.element_model.appendChild(this.cb_control_vectors.element);
 
@@ -386,30 +437,20 @@ export class ModelView {
         this.vector_entries = util.newDiv(null, "vector-entries");
         this.element_model.appendChild(this.vector_entries);
 
-        // Add vector button
-        this.add_vector_btn = new controls.Button("+ Add Vector", () => {
-            this.addVectorEntry();
-        });
-        this.element_model.appendChild(this.add_vector_btn.element);
-
         // Speculative decoding
-
         this.element_model.appendChild(util.newDiv(null, "model-view-text spacer", ""));
         this.element_model.appendChild(util.newDiv(null, "model-view-text divider", ""));
         this.element_model.appendChild(util.newDiv(null, "model-view-text spacer", ""));
 
-//        this.chbk_speculative = new controls.LabelCheckbox("model-view-item-left", "Speculative decoding", "model-view-item-right checkbox", "Enabled", this.modelInfo, "draft_enabled", () => { this.send() } );
-//        this.element_model.appendChild(this.chbk_speculative.element);
-        this.cb_speculative = new controls.LabelCombobox("model-view-item-left", "Speculative decoding", "model-view-item-combobox short", [ "None", "N-gram", "Draft model" ], this.modelInfo, "speculative_mode", () => { this.send() } );
+        this.cb_speculative = new controls.LabelCombobox("model-view-item-left", "Speculative decoding", "model-view-item-combobox short", ["None", "N-gram", "Draft model"], this.modelInfo, "speculative_mode", () => { this.send(); });
         this.element_model.appendChild(this.cb_speculative.element);
 
         this.element_draft_model = util.newHFlex();
         this.element_model.appendChild(this.element_draft_model);
 
-        //this.element_model.appendChild(util.newDiv(null, "model-view-text spacer", ""));
         this.element_draft_model.appendChild(util.newDiv(null, "model-view-text spacer", ""));
 
-        this.tb_draft_model_directory = new controls.LabelTextbox("model-view-item-left", "Draft model directory", "model-view-item-textbox wide", "~/models/my_draft_model/", this.modelInfo, "draft_model_directory", null, () => { this.send() } );
+        this.tb_draft_model_directory = new controls.LabelTextbox("model-view-item-left", "Draft model directory", "model-view-item-textbox wide", "~/models/my_draft_model/", this.modelInfo, "draft_model_directory", null, () => { this.send(); });
         this.element_draft_model.appendChild(this.tb_draft_model_directory.element);
 
         this.element_draft_model_s = util.newHFlex();
@@ -443,7 +484,7 @@ export class ModelView {
 
         this.element_draft_model_s.appendChild(util.newDiv(null, "model-view-text spacer", ""));
 
-        this.tb_draft_rope_alpha = new controls.LabelNumbox("model-view-item-left", "RoPE alpha", "model-view-item-textbox shortright", "", this.modelInfo, "draft_rope_alpha", 0.01, 1000, 2, () => { this.send() }, "draft_rope_alpha_auto" );
+        this.tb_draft_rope_alpha = new controls.LabelNumbox("model-view-item-left", "RoPE alpha", "model-view-item-textbox shortright", "", this.modelInfo, "draft_rope_alpha", 0.01, 1000, 2, () => { this.send(); }, "draft_rope_alpha_auto");
         this.element_draft_model_s.appendChild(this.tb_draft_rope_alpha.element);
 
         // Load/unload
@@ -455,8 +496,8 @@ export class ModelView {
         this.buttons = util.newVFlex();
         this.element.appendChild(this.buttons);
 
-        this.button_load = new controls.Button("⏵ Load model", () => { this.loadModel(); } );
-        this.button_unload = new controls.Button("⏹ Unload model", () => { this.unloadModel() } );
+        this.button_load = new controls.Button("⏵ Load model", () => { this.loadModel(); });
+        this.button_unload = new controls.Button("⏹ Unload model", () => { this.unloadModel(); });
         this.buttons.appendChild(this.button_load.element);
         this.buttons.appendChild(this.button_unload.element);
 
@@ -621,28 +662,36 @@ export class ModelView {
         this.vector_entries.appendChild(entry);
         console.log("Added new vector entry");
     }
-    
-    updateVectorString() {
-        const entries = this.vector_entries.getElementsByClassName("vector-entry");
-        const vectors = [];
+
+    async scanAndPopulateVectors() {
+        if (!this.modelInfo.model_directory) return;
+        if (!this.modelInfo.control_vectors_enabled) return;
         
-        for (const entry of entries) {
-            const inputs = entry.getElementsByTagName("input");
-            const vector = inputs[0].value.trim();
-            const direction = inputs[1].value.trim();
-            const weight = inputs[2].value.trim();
+        console.log("Scanning vectors for:", this.modelInfo.model_directory);
+        try {
+            const response = await fetch("/api/scan_vectors", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ 
+                    model_directory: this.modelInfo.model_directory 
+                })
+            });
             
-            // Include partial entries too
-            vectors.push(`${vector}:${direction}:${weight}`);
+            const data = await response.json();
+            console.log("Found vectors:", data.vectors);
+            
+            // Only clear and update if we have vectors to show
+            if (Object.keys(data.vectors).length > 0) {
+                this.vector_entries.innerHTML = "";
+                
+                for (const [vector, directions] of Object.entries(data.vectors)) {
+                    const entry = this.createVectorEntry(vector, directions);
+                    this.vector_entries.appendChild(entry);
+                }
+            }
+        } catch (error) {
+            console.error("Error scanning vectors:", error);
         }
-        
-        console.log("New vectors string:", vectors.join(","));
-        this.modelInfo.control_vectors = vectors.join(",");
-        
-        // Use a flag to prevent repopulating vectors during this update
-        this._skipVectorPopulate = true;
-        this.send();
-        this._skipVectorPopulate = false;
     }
     
     populateVectorEntries() {
@@ -662,6 +711,98 @@ export class ModelView {
                     );
                 }
             }
+        }
+    }
+    createVectorEntry(vector, directions) {
+        const entry = util.newDiv(null, "vector-entry");
+        
+        // Vector name (static)
+        const vectorLabel = document.createElement("span");
+        vectorLabel.className = "model-view-item-text";
+        vectorLabel.textContent = vector;
+        
+        // Direction dropdown
+        const directionSelect = document.createElement("select");
+        directionSelect.className = "model-view-item-combobox";
+        directions.forEach(dir => {
+            const option = document.createElement("option");
+            option.value = dir;
+            option.textContent = dir;
+            directionSelect.appendChild(option);
+        });
+        
+        // Weight input
+        const weightInput = document.createElement("input");
+        weightInput.className = "model-view-item-textbox shortright";
+        weightInput.type = "number";
+        weightInput.value = "0.0";
+        weightInput.step = "0.1";
+        
+        // Enable/disable checkbox
+        const enableCheckbox = document.createElement("input");
+        enableCheckbox.type = "checkbox";
+        enableCheckbox.className = "vector-enable";
+        
+        entry.appendChild(vectorLabel);
+        entry.appendChild(directionSelect);
+        entry.appendChild(weightInput);
+        entry.appendChild(enableCheckbox);
+        
+        // Update vector string when any control changes
+        const updateFn = () => {
+            if (enableCheckbox.checked) {
+                this.updateVectorString();
+            }
+        };
+        
+        directionSelect.onchange = updateFn;
+        weightInput.onchange = updateFn;
+        enableCheckbox.onchange = updateFn;
+        
+        return entry;
+    }
+    
+    updateVectorString() {
+        const entries = this.vector_entries.getElementsByClassName("vector-entry");
+        const vectors = [];
+        
+        for (const entry of entries) {
+            const checkbox = entry.querySelector('input[type="checkbox"]');
+            if (!checkbox || !checkbox.checked) continue;
+            
+            const vector = entry.querySelector('span').textContent;
+            const direction = entry.querySelector('select').value;
+            const weight = entry.querySelector('input[type="number"]').value;
+            
+            if (vector && direction && weight) {
+                vectors.push(`${vector}:${direction}:${weight}`);
+            }
+        }
+        
+        console.log("Updating vectors:", vectors);
+        this.modelInfo.control_vectors = vectors.join(",");
+        this.send();
+    }
+    
+    async scanAndPopulateVectors() {
+        if (!this.modelInfo.model_directory) return;
+        
+        console.log("Scanning vectors for:", this.modelInfo.model_directory);
+        const response = await fetch("/api/scan_vectors", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ 
+                model_directory: this.modelInfo.model_directory 
+            })
+        });
+        
+        const data = await response.json();
+        console.log("Found vectors:", data.vectors);
+        this.vector_entries.innerHTML = "";
+        
+        for (const [vector, directions] of Object.entries(data.vectors)) {
+            const entry = this.createVectorEntry(vector, directions);
+            this.vector_entries.appendChild(entry);
         }
     }
 }
