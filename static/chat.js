@@ -234,8 +234,26 @@ class SessionView {
         this.items = new Map();
     }
 
+    async countTokens(text) {
+        // Get real token count from server
+        try {
+            const response = await fetch("/api/count_tokens", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ text: text })
+            });
+            const data = await response.json();
+            return data.token_count;
+        } catch (error) {
+            console.error('Error counting tokens:', error);
+            // Fallback to simple counting if API fails
+            return text.trim() === '' ? 0 : text.trim().split(/\s+/).length;
+        }
+    }
+
     createInputField() {
         let sdiv = util.newVFlex();
+        sdiv.style.position = 'relative'; // For absolute positioning of counter
 
         let div = document.createElement("textarea");
         div.className = "session-input";
@@ -251,7 +269,32 @@ class SessionView {
                 }
             }
         });
-        div.addEventListener('input', () => { this.inputFieldAutogrow(); });
+
+const debounce = (func, delay) => {
+    let timeoutId;
+    return (...args) => {
+        clearTimeout(timeoutId);
+        timeoutId = setTimeout(() => func.apply(this, args), delay);
+    };
+};
+
+        div.addEventListener('input', debounce(async () => {
+            this.inputFieldAutogrow();
+            if (globals.g.loadedModelUUID) {
+                const tokens = await this.countTokens(div.value);
+                tokenCounter.textContent = tokens === 1 ? "1 token" : `${tokens} tokens`;
+                tokenCounter.style.display = 'block';
+            } else {
+                tokenCounter.style.display = 'none';
+            }
+        }, 700)); // Delay in ms
+
+        // Create token counter after the textarea, initially hidden
+        let tokenCounter = util.newDiv(null, "token-counter");
+        tokenCounter.textContent = "0 token";
+        tokenCounter.style.display = 'none';
+        sdiv.appendChild(div);
+        sdiv.appendChild(tokenCounter);
 
         this.inputButton = new controls.Button("⏵ Chat", () => { this.submitInput() }, "session-input-button");
         this.cancelButton = new controls.Button("⏹ Stop", () => { this.cancelGen() }, "session-input-button");
@@ -259,7 +302,6 @@ class SessionView {
         this.cancelButton.setHidden(true);
         this.inputButton.refresh();
         this.cancelButton.refresh();
-        sdiv.appendChild(div);
         sdiv.appendChild(this.inputButton.element);
         sdiv.appendChild(this.cancelButton.element);
         return sdiv;
@@ -341,6 +383,17 @@ class SessionView {
         this.sessionInput.value = "";
         this.inputFieldAutogrow();
         this.scrollToBottom();
+        
+        // Reset token counter
+        const tokenCounter = this.element.querySelector('.token-counter');
+        if (tokenCounter) {
+            if (globals.g.loadedModelUUID) {
+                tokenCounter.textContent = "0 token";
+                tokenCounter.style.display = 'block';
+            } else {
+                tokenCounter.style.display = 'none';
+            }
+        }
 
         if (!this.sessionID || this.sessionID == "new") {
             if (input && input != "") {
@@ -512,7 +565,13 @@ class SessionView {
         }
 
         if (response.result == "cancel_pre") {
+            // Handle cancel
+        }
 
+        if (response.result == "refresh_settings") {
+            // Update settings and refresh UI
+            this.chatSettings = response.settings;
+            this.settings.populate();
         }
 
         if (this.stickyScroll) this.scrollToBottom();
@@ -688,9 +747,12 @@ class ChatBlock {
             let ptps = this.block.meta.prompt_speed.toFixed(2)
             if (this.block.meta.prompt_speed > 50000) ptps = "∞";
 
-            let html = "prompt: " + this.block.meta.prompt_tokens.toFixed(0) + " tokens, " + ptps + " tokens/s";
+            let contextPercent = (this.block.meta.context_tokens / this.block.meta.max_seq_len * 100).toFixed(0);
+            let html = "prompt: " + this.block.meta.prompt_tokens.toFixed(0) + " tokens, " + ptps + " tokens/s ";
             html += " ⁄ ";
-            html += "response: " + this.block.meta.gen_tokens.toFixed(0) + " tokens, " + this.block.meta.gen_speed.toFixed(2) + " tokens/s";
+            html += "response: " + this.block.meta.gen_tokens.toFixed(0) + " tokens, " + this.block.meta.gen_speed.toFixed(2) + " tokens/s ";
+            html += " ⁄ ";
+            html += "context: " + contextPercent + "% full";
             p.innerHTML = html;
             this.textBlock.appendChild(p);
         }

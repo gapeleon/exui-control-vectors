@@ -17,13 +17,21 @@ from exllamav2.generator.filters import (
 )
 
 from backend.config import set_config_dir, global_state, config_filename
-from backend.models import get_loaded_model
+from backend.models import set_model_loaded_callback
 from backend.prompts import prompt_formats
 from backend.util import MultiTimer
+import backend.models as models  # Import as module to avoid circular dependency
 import threading
 
 session_list: dict or None = None
 current_session = None
+
+def handle_model_loaded(model):
+    """Handle model loading - only update new sessions with model params"""
+    pass
+
+# Register callback to handle model loading
+set_model_loaded_callback(handle_model_loaded)
 
 # Cancel
 
@@ -92,9 +100,14 @@ def delete_session(d_session):
         current_session = None
 
 
-def get_default_session_settings():
-    return \
-    {
+def get_default_session_settings(use_model_params=False):
+    """Get default session settings
+    
+    Args:
+        use_model_params: If True and a model is loaded with custom params,
+                         apply those params instead of defaults
+    """
+    settings = {
         "prompt_format": "Chat-RP",
         "roles": [ "User", "Assistant", "", "", "", "", "", "" ],
         "system_prompt_default": True,
@@ -118,7 +131,27 @@ def get_default_session_settings():
         "quad_sampling": 0.0,
         "temperature_last": False,
         "skew": 0.0,
+        "dry_base": 1.75,
+        "dry_multiplier": 0.0,
+        "dry_range": 1024
     }
+    
+    if use_model_params:
+        # If requested, try to use model parameters
+        loaded_model = models.get_loaded_model()
+        if loaded_model is not None:
+            model_dict = loaded_model.model_dict
+            # Only apply if model has custom params defined
+            if any(param in model_dict for param in ["temperature", "top_k", "top_p", "repp"]):
+                settings.update({
+                    "temperature": model_dict.get("temperature", settings["temperature"]),
+                    "top_k": model_dict.get("top_k", settings["top_k"]),
+                    "top_p": model_dict.get("top_p", settings["top_p"]),
+                    "repp": model_dict.get("repp", settings["repp"])
+                })
+                print("Updated settings with model params:", settings)
+    
+    return settings
 
 class Session:
 
@@ -145,7 +178,8 @@ class Session:
         self.session_uuid = str(uuid.uuid4())
         self.history = []
         # self.mode = ""
-        self.settings = get_default_session_settings()
+        # New sessions get app defaults
+        self.settings = get_default_session_settings(use_model_params=False)
 
 
     def to_json(self):
@@ -163,9 +197,13 @@ class Session:
         self.session_uuid = j["session_uuid"]
         self.history = j["history"]
         # self.mode = j["mode"]
-        settings = get_default_session_settings()
-        if "settings" in j: settings.update(j["settings"])
-        self.settings = settings
+        
+        # Start with hardcoded defaults (no model params)
+        self.settings = get_default_session_settings(use_model_params=False)
+        
+        # Apply ALL saved settings including sampling params
+        if "settings" in j:
+            self.settings.update(j["settings"])
 
 
     def load(self):
@@ -188,6 +226,31 @@ class Session:
         self.save()
 
 
+    def _create_session_name_from_text(self, text, max_length=30):
+        """Creates a session name from the first message text.
+        
+        Args:
+            text: The message text to create name from
+            max_length: Maximum length of generated name
+            
+        Returns:
+            A name string, truncated with ellipsis if needed
+        """
+        if not text:
+            return "Unnamed session"
+        
+        processed_text = text.split(": ", 1)[-1].strip()  # Cache split result
+        words = processed_text.split()
+        name = ""
+        for word in words:
+            if len(name) + len(word) + 4 <= max_length:  # +4 for "..." and space
+                name += word + " "
+            else:
+                name = name.strip() + "..."
+                break
+        
+        return name.strip() or "Unnamed session"
+
     def user_input(self, data):
         prompt_format = prompt_formats[self.settings["prompt_format"]]()
         input_text = data["user_input_text"]
@@ -197,6 +260,13 @@ class Session:
         if prompt_format.is_instruct(): prefix = ""
         else: prefix = self.settings["roles"][0] + ": "
         new_block["text"] = prefix + input_text
+        
+        # Auto-rename session if this is the first message
+        if len(self.history) == 0:
+            self.name = self._create_session_name_from_text(input_text)
+            if session_list is not None and self.session_uuid in session_list:
+                session_list[self.session_uuid] = (self.name, session_list[self.session_uuid][1])
+        
         self.history.append(new_block)
         self.save()
         return new_block
@@ -212,7 +282,7 @@ class Session:
 
     def create_context_instruct(self, prompt_format, max_len, min_len, uptoblock = None, prefix = ""):
 
-        tokenizer = get_loaded_model().tokenizer
+        tokenizer = models.get_loaded_model().tokenizer
         prompts = []
         responses = []
 
@@ -315,7 +385,7 @@ class Session:
 
     def create_context_raw(self, prompt_format, max_len, min_len, uptoblock = None, prefix=""):
 
-        tokenizer = get_loaded_model().tokenizer
+        tokenizer = models.get_loaded_model().tokenizer
         history_copy = []
         for h in self.history:
             if h["block_uuid"] == uptoblock: break
@@ -381,16 +451,17 @@ class Session:
         gen_prefix = data.get("prefix", "")
         block_id = data.get("block_id", None)
 
-        if get_loaded_model() is None:
+        if models.get_loaded_model() is None:
             packet = { "result": "fail", "error": "No model loaded." }
             yield json.dumps(packet) + "\n"
             return packet
 
-        model = get_loaded_model().model
-        generator = get_loaded_model().generator
-        tokenizer = get_loaded_model().tokenizer
-        cache = get_loaded_model().cache
-        speculative_mode = get_loaded_model().speculative_mode
+        loaded_model = models.get_loaded_model()
+        model = loaded_model.model
+        generator = loaded_model.generator
+        tokenizer = loaded_model.tokenizer
+        cache = loaded_model.cache
+        speculative_mode = loaded_model.speculative_mode
 
         prompt_format = prompt_formats[self.settings["prompt_format"]]()
 
@@ -436,6 +507,9 @@ class Session:
         gen_settings.token_repetition_penalty = self.settings["repp"]
         gen_settings.token_repetition_range = self.settings["repr"]
         gen_settings.token_repetition_decay = self.settings["repr"]
+        gen_settings.dry_base = self.settings["dry_base"]
+        gen_settings.dry_multiplier = self.settings["dry_multiplier"]
+        gen_settings.dry_range = self.settings["dry_range"]
 
         if gen_settings.temperature == 0:
             gen_settings.temperature = 1.0
@@ -659,6 +733,8 @@ class Session:
         meta["gen_speed"] = generated_tokens / (mt.stages["gen"] + 1e-8)
         meta["overflow"] = max_new_tokens if generated_tokens == max_new_tokens else 0
         meta["canceled"] = abort_event.is_set()
+        meta["context_tokens"] = context_ids.shape[-1] + save_tokens.shape[-1]  # Total tokens in context
+        meta["max_seq_len"] = model.config.max_seq_len  # Maximum sequence length
         new_block["meta"] = meta
 
         # Save response block
@@ -720,4 +796,3 @@ class Session:
                 self.history[i] = block
                 break
         self.save()
-

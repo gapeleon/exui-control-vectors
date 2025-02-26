@@ -12,10 +12,12 @@ export class Models {
         this.page.appendChild(layout);
 
         let layout_l = util.newHFlex();
+        this.searchContainer = util.newDiv(null, "model-search-container");
         this.modelList = util.newDiv(null, "model-list");
         this.modelView = util.newDiv(null, "model-view");
         let panel = util.newDiv(null, "model-list-controls");
         layout.appendChild(layout_l);
+        layout_l.appendChild(this.searchContainer);
         layout_l.appendChild(this.modelList);
         layout_l.appendChild(panel);
         layout.appendChild(this.modelView);
@@ -23,11 +25,16 @@ export class Models {
         this.removeButton = new controls.LinkButton("✖ Remove model", "✖ Confirm", () => { this.removeModel(this.lastModelUUID); });
         panel.appendChild(this.removeButton.element);
 
+        this.searchBox = null;
+        this.searchState = "";
         this.items = new Map();
         this.labels = new Map();
         this.currentView = null;
 
+
         this.lastModelUUID = null;
+
+        this.createSearchBox();
     }
 
     onEnter() {
@@ -39,13 +46,41 @@ export class Models {
         });
     }
 
-    populateModelList(response) {
+   createSearchBox() {
+        this.searchBox = new controls.LabelTextboxButton(null, null, "model-search-box", "Search models...", this, "searchState", null, () => {}, null, "✖", () => {
+            this.searchState = "";
+            this.searchBox.tb.value = "";
+            this.populateModelList();
+        });
+        this.searchBox.tb.addEventListener("input", util.debounce(() => {
+            this.searchState = this.searchBox.tb.value;
+            this.populateModelList();
+        }, 400)); // delay in ms
+        this.searchBox.tb.addEventListener("keydown", () => {
+            if (event.key === 'Escape' || event.keyCode === 27) {
+                this.searchState = this.textbox_initial;
+                this.populateModelList();
+            }
+        });
+        this.searchContainer.appendChild(this.searchBox.element);
+    }
+
+    populateModelList(response = null) {
+        if (response) {
+            this.modelData = response.models;
+        }
 
         this.modelList.innerHTML = "";
 
-        for (let model_uuid in response.models)
-            if (response.models.hasOwnProperty(model_uuid))
-                this.addModel(response.models[model_uuid], model_uuid);
+        for (let model_uuid in this.modelData) {
+            if (this.modelData.hasOwnProperty(model_uuid)) {
+                const name = this.modelData[model_uuid];
+                if (this.searchState && !name.toLowerCase().includes(this.searchState.toLowerCase())) {
+                    continue;
+                }
+                this.addModel(name, model_uuid);
+            }
+        }
 
         this.addModel("New model", "new");
         let m = this.lastModelUUID ? this.lastModelUUID : "new";
@@ -156,6 +191,14 @@ export class ModelView {
         this.error_message = "";
     }
 
+    getFolderName(path) {
+        if (!path) return null;
+        // Remove trailing slash if present
+        path = path.replace(/[/\\]$/, '');
+        // Get the last part of the path (the folder name)
+        return path.split(/[/\\]/).pop();
+    }
+
     updateView() {
         if (!this.modelID || this.modelID == "new") {
             let model_info = {};
@@ -207,6 +250,12 @@ export class ModelView {
     send(post = null) {
         let packet = {};
         packet.model_info = this.modelInfo;
+        if (this.modelID == "new") {
+            let folderName = this.getFolderName(this.modelInfo.model_directory);
+            if (folderName) {
+                this.modelInfo.name = folderName;
+            }
+        }
         fetch("/api/update_model", { method: "POST", headers: { "Content-Type": "application/json", }, body: JSON.stringify(packet) })
         .then(response => response.json())
         .then(response => {
@@ -362,7 +411,16 @@ export class ModelView {
         this.element.appendChild(util.newDiv(null, "model-view-text divider", ""));
         this.element.appendChild(util.newDiv(null, "model-view-text spacer", ""));
 
-        this.tb_model_directory = new controls.LabelTextbox("model-view-item-left", "Model directory", "model-view-item-textbox wide", "~/models/my_model/", this.modelInfo, "model_directory", null, () => { this.send(); });
+        this.tb_model_directory = new controls.LabelTextbox("model-view-item-left", "Model directory", "model-view-item-textbox wide", "~/models/my_model/", this.modelInfo, "model_directory", null, () => {
+            if (this.modelID == "new") {
+                let folderName = this.getFolderName(this.modelInfo.model_directory);
+                if (folderName) {
+                    this.modelInfo.name = folderName;
+                }
+            }
+            this.send();
+        });
+
         this.element.appendChild(this.tb_model_directory.element);
 
         this.element_model = util.newHFlex();
@@ -512,6 +570,8 @@ export class ModelView {
     }
 
     loadModel() {
+        const controller = new AbortController();
+        const signal = controller.signal;
 
         overlay.loadingOverlay.setProgress(0, 1);
         overlay.pageOverlay.setMode("loading");
@@ -526,10 +586,18 @@ export class ModelView {
             }, 10000)
         });
 
+        overlay.loadingOverlay.onCancel = () => {
+            controller.abort();
+            overlay.pageOverlay.setMode();
+            this.error_message = "Loading cancelled";
+            this.updateView();
+        };
+
         let fetchRequest = fetch("/api/load_model", {
             method: "POST",
             headers: { "Content-Type": "application/json", },
-            body: JSON.stringify(packet)
+            body: JSON.stringify(packet),
+            signal: signal
         });
 
         const self = this;
